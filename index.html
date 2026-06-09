@@ -65,11 +65,9 @@
       border-color: #1a73e8;
       box-shadow: 0 0 0 2px rgba(26,115,232,0.15);
     }
+    select:disabled { background: #f5f5f5; color: #999; }
     textarea { min-height: 90px; resize: vertical; }
     .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    @media (max-width: 480px) {
-      .grid2 { grid-template-columns: 1fr 1fr; }
-    }
     .checkbox-row {
       display: flex;
       flex-wrap: wrap;
@@ -129,33 +127,24 @@
   <div class="card">
     <div class="section-title">基本情報</div>
 
+    <div class="field">
+      <label class="field-label required" for="area">エリア</label>
+      <select id="area" required onchange="onAreaChange()" disabled>
+        <option value="">読み込み中…</option>
+      </select>
+    </div>
+
     <div class="grid2">
       <div class="field">
-        <label class="field-label required">支店</label>
-        <select id="branch" required>
-          <option value="">選択してください</option>
-          <option>高槻</option><option>京都</option><option>茨木</option>
-          <option>新大阪</option><option>尼崎</option><option>京阪</option>
-          <option>堺</option><option>河内長野</option><option>八尾</option>
-          <option>東大阪</option><option>橿原</option>
+        <label class="field-label required" for="branch">支店</label>
+        <select id="branch" required onchange="onBranchChange()" disabled>
+          <option value="">先にエリアを選択</option>
         </select>
       </div>
       <div class="field">
-        <label class="field-label required">担当者</label>
-        <select id="staff" required>
-          <option value="">選択してください</option>
-          <option>戸田</option><option>町田</option><option>上治</option>
-          <option>谷添</option><option>加来</option><option>飯田</option>
-          <option>岩</option><option>川原</option><option>水落</option>
-          <option>松丸</option><option>瀧</option><option>竹田(徹)</option>
-          <option>増田</option><option>早川</option><option>高原</option>
-          <option>大庭</option><option>阪口</option><option>寺原</option>
-          <option>富田(由)</option><option>前田</option><option>西宮</option>
-          <option>村瀬</option><option>田浦</option><option>中尾</option>
-          <option>大林</option><option>河嶌</option><option>前川</option>
-          <option>藤原</option><option>内川</option><option>尾本</option>
-          <option>金子</option><option>水野</option><option>山添</option>
-          <option>澤井</option><option>片山</option><option>嶋本</option>
+        <label class="field-label required" for="staff">担当者</label>
+        <select id="staff" required disabled>
+          <option value="">先に支店を選択</option>
         </select>
       </div>
     </div>
@@ -177,24 +166,12 @@
     <div class="field">
       <label class="field-label">営業活動契機（複数選択可）</label>
       <div class="checkbox-row" id="activityTypeGroup">
-        <label class="chip" onclick="toggleChip(this,'block')">
-          <input type="checkbox" value="ブロック">ブロック
-        </label>
-        <label class="chip" onclick="toggleChip(this,'tenant')">
-          <input type="checkbox" value="テナントイベント">テナントイベント
-        </label>
-        <label class="chip" onclick="toggleChip(this,'internal')">
-          <input type="checkbox" value="社内イベント">社内イベント
-        </label>
-        <label class="chip" onclick="toggleChip(this,'post')">
-          <input type="checkbox" value="施行後訪問">施行後訪問
-        </label>
-        <label class="chip" onclick="toggleChip(this,'existing')">
-          <input type="checkbox" value="既存会員">既存会員
-        </label>
-        <label class="chip" onclick="toggleChip(this,'other')">
-          <input type="checkbox" value="その他新規">その他新規
-        </label>
+        <label class="chip" onclick="toggleChip(this,'block')"><input type="checkbox" value="ブロック">ブロック</label>
+        <label class="chip" onclick="toggleChip(this,'tenant')"><input type="checkbox" value="テナントイベント">テナントイベント</label>
+        <label class="chip" onclick="toggleChip(this,'internal')"><input type="checkbox" value="社内イベント">社内イベント</label>
+        <label class="chip" onclick="toggleChip(this,'post')"><input type="checkbox" value="施行後訪問">施行後訪問</label>
+        <label class="chip" onclick="toggleChip(this,'existing')"><input type="checkbox" value="既存会員">既存会員</label>
+        <label class="chip" onclick="toggleChip(this,'other')"><input type="checkbox" value="その他新規">その他新規</label>
       </div>
     </div>
   </div>
@@ -213,31 +190,11 @@
     </div>
     <div class="grid2">
       <div class="field"><label class="field-label">訪問件数</label><input type="number" id="blockVisits" min="0"></div>
-      <div class="field">
-        <label class="field-label">在宅件数</label>
-        <div class="help">インターホンに出てくれた数（居留守含む）</div>
-        <input type="number" id="blockAtHome" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">アプローチ数</label>
-        <div class="help">直接対面でお話しができた数</div>
-        <input type="number" id="blockApproach" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">プレゼン数</label>
-        <div class="help">互助会のプレゼンができた数</div>
-        <input type="number" id="blockPresent" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">クロージング数</label>
-        <div class="help">契約の決断を促した数</div>
-        <input type="number" id="blockClosing" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">見込み件数</label>
-        <div class="help">濃い薄い限らず見込みを獲得できた件数</div>
-        <input type="number" id="blockProspect" min="0">
-      </div>
+      <div class="field"><label class="field-label">在宅件数</label><div class="help">インターホンに出てくれた数（居留守含む）</div><input type="number" id="blockAtHome" min="0"></div>
+      <div class="field"><label class="field-label">アプローチ数</label><div class="help">直接対面でお話しができた数</div><input type="number" id="blockApproach" min="0"></div>
+      <div class="field"><label class="field-label">プレゼン数</label><div class="help">互助会のプレゼンができた数</div><input type="number" id="blockPresent" min="0"></div>
+      <div class="field"><label class="field-label">クロージング数</label><div class="help">契約の決断を促した数</div><input type="number" id="blockClosing" min="0"></div>
+      <div class="field"><label class="field-label">見込み件数</label><div class="help">濃い薄い限らず見込みを獲得できた件数</div><input type="number" id="blockProspect" min="0"></div>
       <div class="field"><label class="field-label">契約件数</label><input type="number" id="blockContract" min="0"></div>
       <div class="field"><label class="field-label">契約口数</label><input type="number" id="blockContractCnt" min="0"></div>
       <div class="field"><label class="field-label">リザべ件数（日時指定有）</label><input type="number" id="blockReserveFixed" min="0"></div>
@@ -248,32 +205,13 @@
   <!-- ========== テナントイベント ========== -->
   <div class="card activity-card" id="section-tenant">
     <div class="section-title">テナントイベント</div>
-    <div class="field">
-      <label class="field-label">テナントイベント活動時間</label>
-      <select id="tenantTime" class="time-select"></select>
-    </div>
+    <div class="field"><label class="field-label">テナントイベント活動時間</label><select id="tenantTime" class="time-select"></select></div>
     <div class="grid2">
       <div class="field"><label class="field-label">声掛け数</label><input type="number" id="tenantGreeting" min="0"></div>
-      <div class="field">
-        <label class="field-label">アプローチ数</label>
-        <div class="help">直接対面でお話しができた数</div>
-        <input type="number" id="tenantApproach" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">プレゼン数</label>
-        <div class="help">互助会のプレゼンができた数</div>
-        <input type="number" id="tenantPresent" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">クロージング数</label>
-        <div class="help">契約の決断を促した数</div>
-        <input type="number" id="tenantClosing" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">見込み件数</label>
-        <div class="help">濃い薄い限らず見込みを獲得できた件数</div>
-        <input type="number" id="tenantProspect" min="0">
-      </div>
+      <div class="field"><label class="field-label">アプローチ数</label><div class="help">直接対面でお話しができた数</div><input type="number" id="tenantApproach" min="0"></div>
+      <div class="field"><label class="field-label">プレゼン数</label><div class="help">互助会のプレゼンができた数</div><input type="number" id="tenantPresent" min="0"></div>
+      <div class="field"><label class="field-label">クロージング数</label><div class="help">契約の決断を促した数</div><input type="number" id="tenantClosing" min="0"></div>
+      <div class="field"><label class="field-label">見込み件数</label><div class="help">濃い薄い限らず見込みを獲得できた件数</div><input type="number" id="tenantProspect" min="0"></div>
       <div class="field"><label class="field-label">リザべ件数（日時指定有）</label><input type="number" id="tenantReserveFixed" min="0"></div>
       <div class="field"><label class="field-label">リザべ件数（日時未指定）</label><input type="number" id="tenantReserveUnfixed" min="0"></div>
       <div class="field"><label class="field-label">契約件数</label><input type="number" id="tenantContract" min="0"></div>
@@ -284,31 +222,12 @@
   <!-- ========== 社内イベント ========== -->
   <div class="card activity-card" id="section-internal">
     <div class="section-title">社内イベント</div>
-    <div class="field">
-      <label class="field-label">社内イベント活動時間</label>
-      <select id="internalTime" class="time-select"></select>
-    </div>
+    <div class="field"><label class="field-label">社内イベント活動時間</label><select id="internalTime" class="time-select"></select></div>
     <div class="grid2">
-      <div class="field">
-        <label class="field-label">アプローチ数</label>
-        <div class="help">直接対面でお話しができた数</div>
-        <input type="number" id="internalApproach" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">プレゼン数</label>
-        <div class="help">互助会のプレゼンができた数</div>
-        <input type="number" id="internalPresent" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">クロージング数</label>
-        <div class="help">契約の決断を促した数</div>
-        <input type="number" id="internalClosing" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">見込み件数</label>
-        <div class="help">濃い薄い限らず見込みを獲得できた件数</div>
-        <input type="number" id="internalProspect" min="0">
-      </div>
+      <div class="field"><label class="field-label">アプローチ数</label><div class="help">直接対面でお話しができた数</div><input type="number" id="internalApproach" min="0"></div>
+      <div class="field"><label class="field-label">プレゼン数</label><div class="help">互助会のプレゼンができた数</div><input type="number" id="internalPresent" min="0"></div>
+      <div class="field"><label class="field-label">クロージング数</label><div class="help">契約の決断を促した数</div><input type="number" id="internalClosing" min="0"></div>
+      <div class="field"><label class="field-label">見込み件数</label><div class="help">濃い薄い限らず見込みを獲得できた件数</div><input type="number" id="internalProspect" min="0"></div>
       <div class="field"><label class="field-label">契約件数</label><input type="number" id="internalContract" min="0"></div>
       <div class="field"><label class="field-label">契約口数</label><input type="number" id="internalContractCnt" min="0"></div>
     </div>
@@ -317,31 +236,12 @@
   <!-- ========== 施行後訪問 ========== -->
   <div class="card activity-card" id="section-post">
     <div class="section-title">施行後訪問</div>
-    <div class="field">
-      <label class="field-label">施行後訪問活動時間</label>
-      <select id="postTime" class="time-select"></select>
-    </div>
+    <div class="field"><label class="field-label">施行後訪問活動時間</label><select id="postTime" class="time-select"></select></div>
     <div class="grid2">
-      <div class="field">
-        <label class="field-label">アプローチ数</label>
-        <div class="help">直接対面でお話しができた数</div>
-        <input type="number" id="postApproach" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">プレゼン数</label>
-        <div class="help">互助会のプレゼンができた数</div>
-        <input type="number" id="postPresent" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">クロージング数</label>
-        <div class="help">契約の決断を促した数</div>
-        <input type="number" id="postClosing" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">見込み件数</label>
-        <div class="help">濃い薄い限らず見込みを獲得できた件数</div>
-        <input type="number" id="postProspect" min="0">
-      </div>
+      <div class="field"><label class="field-label">アプローチ数</label><div class="help">直接対面でお話しができた数</div><input type="number" id="postApproach" min="0"></div>
+      <div class="field"><label class="field-label">プレゼン数</label><div class="help">互助会のプレゼンができた数</div><input type="number" id="postPresent" min="0"></div>
+      <div class="field"><label class="field-label">クロージング数</label><div class="help">契約の決断を促した数</div><input type="number" id="postClosing" min="0"></div>
+      <div class="field"><label class="field-label">見込み件数</label><div class="help">濃い薄い限らず見込みを獲得できた件数</div><input type="number" id="postProspect" min="0"></div>
       <div class="field"><label class="field-label">契約件数</label><input type="number" id="postContract" min="0"></div>
       <div class="field"><label class="field-label">契約口数</label><input type="number" id="postContractCnt" min="0"></div>
     </div>
@@ -350,32 +250,13 @@
   <!-- ========== 既存会員 ========== -->
   <div class="card activity-card" id="section-existing">
     <div class="section-title">既存会員</div>
-    <div class="field">
-      <label class="field-label">既存会員活動時間</label>
-      <select id="existingTime" class="time-select"></select>
-    </div>
+    <div class="field"><label class="field-label">既存会員活動時間</label><select id="existingTime" class="time-select"></select></div>
     <div class="grid2">
       <div class="field"><label class="field-label">訪問件数</label><input type="number" id="existingVisits" min="0"></div>
-      <div class="field">
-        <label class="field-label">アプローチ数</label>
-        <div class="help">直接対面でお話しができた数</div>
-        <input type="number" id="existingApproach" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">プレゼン数</label>
-        <div class="help">互助会のプレゼンができた数</div>
-        <input type="number" id="existingPresent" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">クロージング数</label>
-        <div class="help">契約の決断を促した数</div>
-        <input type="number" id="existingClosing" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">見込み件数</label>
-        <div class="help">濃い薄い限らず見込みを獲得できた件数</div>
-        <input type="number" id="existingProspect" min="0">
-      </div>
+      <div class="field"><label class="field-label">アプローチ数</label><div class="help">直接対面でお話しができた数</div><input type="number" id="existingApproach" min="0"></div>
+      <div class="field"><label class="field-label">プレゼン数</label><div class="help">互助会のプレゼンができた数</div><input type="number" id="existingPresent" min="0"></div>
+      <div class="field"><label class="field-label">クロージング数</label><div class="help">契約の決断を促した数</div><input type="number" id="existingClosing" min="0"></div>
+      <div class="field"><label class="field-label">見込み件数</label><div class="help">濃い薄い限らず見込みを獲得できた件数</div><input type="number" id="existingProspect" min="0"></div>
       <div class="field"><label class="field-label">契約件数</label><input type="number" id="existingContract" min="0"></div>
       <div class="field"><label class="field-label">契約口数</label><input type="number" id="existingContractCnt" min="0"></div>
     </div>
@@ -384,33 +265,14 @@
   <!-- ========== その他新規 ========== -->
   <div class="card activity-card" id="section-other">
     <div class="section-title">その他新規</div>
-    <div class="field">
-      <label class="field-label">その他新規活動時間</label>
-      <select id="otherTime" class="time-select"></select>
-    </div>
+    <div class="field"><label class="field-label">その他新規活動時間</label><select id="otherTime" class="time-select"></select></div>
     <div class="grid2">
-      <div class="field">
-        <label class="field-label">アプローチ数</label>
-        <div class="help">直接対面でお話しができた数</div>
-        <input type="number" id="otherApproach" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">プレゼン数</label>
-        <div class="help">互助会のプレゼンができた数</div>
-        <input type="number" id="otherPresent" min="0">
-      </div>
-      <div class="field">
-        <label class="field-label">クロージング数</label>
-        <div class="help">契約の決断を促した数</div>
-        <input type="number" id="otherClosing" min="0">
-      </div>
+      <div class="field"><label class="field-label">アプローチ数</label><div class="help">直接対面でお話しができた数</div><input type="number" id="otherApproach" min="0"></div>
+      <div class="field"><label class="field-label">プレゼン数</label><div class="help">互助会のプレゼンができた数</div><input type="number" id="otherPresent" min="0"></div>
+      <div class="field"><label class="field-label">クロージング数</label><div class="help">契約の決断を促した数</div><input type="number" id="otherClosing" min="0"></div>
       <div class="field"><label class="field-label">リザべ件数（日時指定有）</label><input type="number" id="otherReserveFixed" min="0"></div>
       <div class="field"><label class="field-label">リザべ件数（日時未指定）</label><input type="number" id="otherReserveUnfixed" min="0"></div>
-      <div class="field">
-        <label class="field-label">見込み件数</label>
-        <div class="help">濃い薄い限らず見込みを獲得できた件数</div>
-        <input type="number" id="otherProspect" min="0">
-      </div>
+      <div class="field"><label class="field-label">見込み件数</label><div class="help">濃い薄い限らず見込みを獲得できた件数</div><input type="number" id="otherProspect" min="0"></div>
       <div class="field"><label class="field-label">契約件数</label><input type="number" id="otherContract" min="0"></div>
       <div class="field"><label class="field-label">契約口数</label><input type="number" id="otherContractCnt" min="0"></div>
     </div>
@@ -442,20 +304,70 @@
 </div>
 
 <script>
-  // ★ 下記2つを実際の値に書き換えてください
-  var FORM_ID    = '1FAIpQLSdLZcy16YDvUI0Ba7IxX4uzMqwwQREKf4FbnD6dmdV-LvZNGg';
-  var ENTRY_ID   = 'entry.1785221639';
+  var FORM_ID  = '1FAIpQLSdLZcy16YDvUI0Ba7IxX4uzMqwwQREKf4FbnD6dmdV-LvZNGg';
+  var ENTRY_ID = 'entry.1785221639';
+
+  var MASTER = null;
+
+  fetch('./master.json')
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data) {
+      MASTER = data;
+      var areaEl = document.getElementById('area');
+      areaEl.innerHTML = '<option value="">選択してください</option>';
+      Object.keys(MASTER).forEach(function(a) {
+        var opt = document.createElement('option');
+        opt.value = a; opt.textContent = a;
+        areaEl.appendChild(opt);
+      });
+      areaEl.disabled = false;
+    })
+    .catch(function() {
+      var areaEl = document.getElementById('area');
+      areaEl.innerHTML = '<option value="">読み込み失敗 - ページを再読み込みしてください</option>';
+    });
+
+  function onAreaChange() {
+    var area     = document.getElementById('area').value;
+    var branchEl = document.getElementById('branch');
+    var staffEl  = document.getElementById('staff');
+    branchEl.innerHTML = '<option value="">選択してください</option>';
+    staffEl.innerHTML  = '<option value="">先に支店を選択</option>';
+    staffEl.disabled   = true;
+    if (!area) { branchEl.disabled = true; return; }
+    branchEl.disabled = false;
+    Object.keys(MASTER[area]).forEach(function(b) {
+      var opt = document.createElement('option');
+      opt.value = b; opt.textContent = b;
+      branchEl.appendChild(opt);
+    });
+  }
+
+  function onBranchChange() {
+    var area    = document.getElementById('area').value;
+    var branch  = document.getElementById('branch').value;
+    var staffEl = document.getElementById('staff');
+    staffEl.innerHTML = '<option value="">選択してください</option>';
+    if (!area || !branch) { staffEl.disabled = true; return; }
+    staffEl.disabled = false;
+    (MASTER[area][branch] || []).forEach(function(s) {
+      var opt = document.createElement('option');
+      opt.value = s; opt.textContent = s;
+      staffEl.appendChild(opt);
+    });
+  }
 
   document.getElementById('actDate').value = new Date().toISOString().split('T')[0];
 
   var times = ['','30分','1時間','1時間30分','2時間','2時間30分','3時間','3時間30分',
-               '4時間','4時間30分','5時間','5時間30分','6時間','6時間30分',
-               '7時間','7時間30分','8時間'];
+               '4時間','4時間30分','5時間','5時間30分','6時間','6時間30分','7時間','7時間30分','8時間'];
   document.querySelectorAll('.time-select').forEach(function(sel) {
     times.forEach(function(t) {
       var opt = document.createElement('option');
-      opt.value = t;
-      opt.textContent = t === '' ? '選択' : t;
+      opt.value = t; opt.textContent = t === '' ? '選択' : t;
       sel.appendChild(opt);
     });
   });
@@ -468,27 +380,25 @@
   }
 
   function handleSubmit() {
+    var area       = document.getElementById('area').value;
     var branch     = document.getElementById('branch').value;
     var staff      = document.getElementById('staff').value;
     var date       = document.getElementById('actDate').value;
     var timeSlot   = document.getElementById('timeSlot').value;
     var reflection = document.getElementById('reflection').value.trim();
-    var checked    = document.querySelectorAll('#activityTypeGroup input:checked');
 
-    if (!branch || !staff || !date || !timeSlot || !reflection) {
+    if (!area || !branch || !staff || !date || !timeSlot || !reflection) {
       alert('必須項目（＊）をすべて入力・選択してください。');
       return;
     }
 
-    var activityTypes = Array.from(checked).map(function(cb){ return cb.value; }).join(', ');
+    var activityTypes = Array.from(document.querySelectorAll('#activityTypeGroup input:checked'))
+                             .map(function(cb){ return cb.value; }).join(', ');
 
-    function v(id) {
-      var el = document.getElementById(id);
-      return el ? el.value : '';
-    }
+    function v(id) { var el = document.getElementById(id); return el ? el.value : ''; }
 
     var data = {
-      branch: branch, staff: staff, date: date,
+      area: area, branch: branch, staff: staff, date: date,
       timeSlot: timeSlot, activityTypes: activityTypes,
       blockArea: v('blockArea'), blockTime: v('blockTime'),
       blockVisits: v('blockVisits'), blockAtHome: v('blockAtHome'),
@@ -526,14 +436,11 @@
     btn.disabled = true;
     btn.textContent = '送信中…';
 
-    var formUrl = 'https://docs.google.com/forms/d/e/' + FORM_ID + '/formResponse';
     var body = new URLSearchParams();
     body.append(ENTRY_ID, JSON.stringify(data));
 
-    fetch(formUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      body: body
+    fetch('https://docs.google.com/forms/d/e/' + FORM_ID + '/formResponse', {
+      method: 'POST', mode: 'no-cors', body: body
     })
     .then(function() {
       document.getElementById('reportForm').style.display = 'none';
