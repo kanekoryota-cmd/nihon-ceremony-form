@@ -304,8 +304,7 @@
 </div>
 
 <script>
-  var FORM_ID  = '1FAIpQLSdLZcy16YDvUI0Ba7IxX4uzMqwwQREKf4FbnD6dmdV-LvZNGg';
-  var ENTRY_ID = 'entry.1785221639';
+  var GAS_URL = 'https://script.google.com/a/macros/revamp.co.jp/s/AKfycbzrRszFTcjiU1NdNTp5yK659nskHYZdc__X1dKwyNykcFiLuQF4QQMqCaMZUbmOmeA/exec';
 
   var MASTER = null;
 
@@ -436,11 +435,8 @@
     btn.disabled = true;
     btn.textContent = '送信中…';
 
-    var body = new URLSearchParams();
-    body.append(ENTRY_ID, JSON.stringify(data));
-
-    fetch('https://docs.google.com/forms/d/e/' + FORM_ID + '/formResponse', {
-      method: 'POST', mode: 'no-cors', body: body
+    fetch(GAS_URL, {
+      method: 'POST', mode: 'no-cors', body: JSON.stringify(data)
     })
     .then(function() {
       document.getElementById('reportForm').style.display = 'none';
