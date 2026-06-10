@@ -166,12 +166,12 @@
     <div class="field">
       <label class="field-label">営業活動契機（複数選択可）</label>
       <div class="checkbox-row" id="activityTypeGroup">
-        <label class="chip" onclick="toggleChip(this,'block')"><input type="checkbox" value="ブロック">ブロック</label>
-        <label class="chip" onclick="toggleChip(this,'tenant')"><input type="checkbox" value="テナントイベント">テナントイベント</label>
-        <label class="chip" onclick="toggleChip(this,'internal')"><input type="checkbox" value="社内イベント">社内イベント</label>
-        <label class="chip" onclick="toggleChip(this,'post')"><input type="checkbox" value="施行後訪問">施行後訪問</label>
-        <label class="chip" onclick="toggleChip(this,'existing')"><input type="checkbox" value="既存会員">既存会員</label>
-        <label class="chip" onclick="toggleChip(this,'other')"><input type="checkbox" value="その他新規">その他新規</label>
+        <label class="chip"><input type="checkbox" value="ブロック" onchange="toggleChip(this,'block')">ブロック</label>
+        <label class="chip"><input type="checkbox" value="テナントイベント" onchange="toggleChip(this,'tenant')">テナントイベント</label>
+        <label class="chip"><input type="checkbox" value="社内イベント" onchange="toggleChip(this,'internal')">社内イベント</label>
+        <label class="chip"><input type="checkbox" value="施行後訪問" onchange="toggleChip(this,'post')">施行後訪問</label>
+        <label class="chip"><input type="checkbox" value="既存会員" onchange="toggleChip(this,'existing')">既存会員</label>
+        <label class="chip"><input type="checkbox" value="その他新規" onchange="toggleChip(this,'other')">その他新規</label>
       </div>
     </div>
   </div>
@@ -372,12 +372,9 @@
     });
   });
 
-  function toggleChip(chip, sectionId) {
-    var cb = chip.querySelector('input[type="checkbox"]');
-    cb.checked = !cb.checked;
-    chip.classList.toggle('checked', cb.checked);
+  function toggleChip(cb, sectionId) {
+    cb.parentElement.classList.toggle('checked', cb.checked);
     document.getElementById('section-' + sectionId).classList.toggle('active', cb.checked);
-    return false;
   }
 
   function handleSubmit() {
