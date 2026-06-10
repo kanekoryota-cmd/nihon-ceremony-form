@@ -286,6 +286,10 @@
       <input type="number" id="insurance" min="0">
     </div>
     <div class="field">
+      <label class="field-label">自主リクルート声かけ数</label>
+      <input type="number" id="recruitCall" min="0">
+    </div>
+    <div class="field">
       <label class="field-label required">振り返り（成功・課題・対策）</label>
       <textarea id="reflection" required placeholder="本日の成功点・課題・次回への対策を記入してください"></textarea>
     </div>
@@ -426,7 +430,8 @@
       otherReserveFixed: v('otherReserveFixed'), otherReserveUnfixed: v('otherReserveUnfixed'),
       otherProspect: v('otherProspect'), otherContract: v('otherContract'),
       otherContractCnt: v('otherContractCnt'),
-      insurance: v('insurance'), reflection: reflection,
+      insurance: v('insurance'), recruitCall: v('recruitCall'),
+      reflection: reflection,
       customerQuote: v('customerQuote')
     };
 
