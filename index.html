@@ -373,10 +373,11 @@
   });
 
   function toggleChip(chip, sectionId) {
-    var cb = chip.querySelector('input');
-    var willCheck = !cb.checked;
-    chip.classList.toggle('checked', willCheck);
-    document.getElementById('section-' + sectionId).classList.toggle('active', willCheck);
+    var cb = chip.querySelector('input[type="checkbox"]');
+    cb.checked = !cb.checked;
+    chip.classList.toggle('checked', cb.checked);
+    document.getElementById('section-' + sectionId).classList.toggle('active', cb.checked);
+    return false;
   }
 
   function handleSubmit() {
