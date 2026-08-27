@@ -282,9 +282,11 @@
   <!-- ========== 共通項目 ========== -->
   <div class="card">
     <div class="section-title">共通項目</div>
-    <div class="field">
-      <label class="field-label">保険獲得件数</label>
-      <input type="number" id="insurance" min="0">
+    <div class="grid2">
+      <div class="field"><label class="field-label">保険アプローチ数</label><input type="number" id="insuranceApproach" min="0"></div>
+      <div class="field"><label class="field-label">保険プレゼン数</label><input type="number" id="insurancePresent" min="0"></div>
+      <div class="field"><label class="field-label">保険クロージング数</label><input type="number" id="insuranceClosing" min="0"></div>
+      <div class="field"><label class="field-label">保険獲得件数</label><input type="number" id="insurance" min="0"></div>
     </div>
     <div class="field">
       <label class="field-label">自主リクルート声かけ数</label>
@@ -431,6 +433,8 @@
       otherReserveFixed: v('otherReserveFixed'), otherReserveUnfixed: v('otherReserveUnfixed'),
       otherProspect: v('otherProspect'), otherContract: v('otherContract'),
       otherContractCnt: v('otherContractCnt'),
+      insuranceApproach: v('insuranceApproach'), insurancePresent: v('insurancePresent'),
+      insuranceClosing: v('insuranceClosing'),
       insurance: v('insurance'), recruitCall: v('recruitCall'),
       reflection: reflection,
       customerQuote: v('customerQuote')
