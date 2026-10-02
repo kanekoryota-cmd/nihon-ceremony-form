@@ -1,1124 +1,499 @@
-// ============================================================
-// 営業活動日報 — onFormSubmit 統合スクリプト
-// GitHub Pages／Apps Script版の回答を保存し、最新形式のメールを送信
-// 修正版: 2026-10-02（共通項目の総移動時間に対応）
-// ============================================================
 
-// ---- スプレッドシートID ----
-var IWATE_SPREADSHEET_ID = '17D6ngNH10Kl3iN3Synm9NAZJ0bj2MGtfjRHOB4_Ux9U';
-
-// ---- シート名定数 ----
-var IWATE_SHEET_ANSWER     = '岩手_回答';
-var IWATE_SHEET_PROSPECT   = '岩手_見込み';
-var KINKI1_SHEET_ANSWER    = '近畿1_回答';
-var KINKI1_SHEET_PROSPECT  = '近畿1_見込み';
-var IWATE_SHEET_STAFF_MAIL = '担当者メール'; // A:担当者名 B:支店 C:メールアドレス
-var IWATE_SHEET_BRANCH     = '支店マスタ';   // A:支店名 B:店長/店長代理名 C:店長/店長代理メール
-var IWATE_SHEET_AREA       = 'エリアマスタ'; // A:エリア名 B:エリアリーダー/マネージャー名 C:エリアリーダー/マネージャーメール
-var IWATE_DATA_COL_INDEX   = 1;              // Google フォームの回答列: [0]=タイムスタンプ, [1]=JSON文字列
-
-// ---- 現在の回答フォーム ----
-var IWATE_FORM_URL = 'https://forms.gle/sT23nbQEDYEEpdV4A';
-
-// ---- メール送信元（revamp@am.k-cloud76.biz の送信エイリアス） ----
-var IWATE_SENDER_EMAIL = 'dailyreport@am.k-cloud76.biz';
-
-// ---- 週次見込レポート ----
-// 送信先は「担当者メール」「支店マスタ」「エリアマスタ」から取得します。
-var IWATE_WEEKLY_TIMEZONE = 'Asia/Tokyo';
-var IWATE_OLD_PROSPECT_SHEET = '回答';
-var IWATE_OLD_PROSPECT_DEPARTMENTS = ['岩手加入推進第1課', '岩手加入推進第2課'];
-var IWATE_OLD_PROSPECT_LAST_DATE = '2026-08-27';
-var IWATE_NEW_PROSPECT_FIRST_DATE = '2026-08-28';
-var IWATE_RANKS = ['S', 'A', 'B', 'C'];
-
-// ============================================================
-// Google Apps Script ウェブアプリ
-// doGet: Apps Script版の画面を表示
-// doPost: GitHub Pages版から送られた回答を受信
-// ============================================================
-function doGet(e) {
-  if (e && e.parameter && e.parameter.action === 'activeStaffMaster') {
-    return buildActiveStaffMasterResponse(e);
-  }
-
-  return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('営業活動日報')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-}
-
-// GitHub Pages版へ、担当者メールシートのE列が〇のスタッフだけを返します。
-// メールアドレスは公開せず、エリア・支店・担当者名だけを返します。
-function buildActiveStaffMasterResponse(e) {
-  var requestedArea = String(e.parameter.area || '').trim();
-  var ss = SpreadsheetApp.openById(IWATE_SPREADSHEET_ID);
-  var sheet = ss.getSheetByName(IWATE_SHEET_STAFF_MAIL);
-  var master = {};
-
-  if (sheet && sheet.getLastRow() >= 2) {
-    var values = sheet.getDataRange().getDisplayValues();
-    for (var rowIndex = 1; rowIndex < values.length; rowIndex++) {
-      var row = values[rowIndex];
-      var staffName = String(row[0] || '').trim();
-      var branch = String(row[1] || '').trim();
-      var area = String(row[3] || '').trim();
-      var activeFlag = String(row[4] || '').replace(/[\s　]/g, '');
-
-      if (activeFlag !== '〇' && activeFlag !== '○') continue;
-      if (iwateNormalizeMasterKey(area) !== iwateNormalizeMasterKey(requestedArea)) continue;
-      if (!staffName || !branch) continue;
-
-      var areaKey = iwateNormalizeMasterKey(requestedArea) || iwateNormalizeMasterKey(area);
-      if (!master[areaKey]) master[areaKey] = {};
-      if (!master[areaKey][branch]) master[areaKey][branch] = [];
-      if (master[areaKey][branch].indexOf(staffName) === -1) {
-        master[areaKey][branch].push(staffName);
-      }
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>営業活動日報</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      background: #f0f2f5;
+      color: #333;
+      padding: 16px;
+      max-width: 720px;
+      margin: 0 auto;
     }
-  }
-
-  var payload = JSON.stringify({ ok: true, master: master });
-  var callback = String(e.parameter.callback || '').replace(/[^A-Za-z0-9_.$]/g, '');
-  if (callback) {
-    return ContentService
-      .createTextOutput(callback + '(' + payload + ');')
-      .setMimeType(ContentService.MimeType.JAVASCRIPT);
-  }
-
-  return ContentService
-    .createTextOutput(payload)
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function doPost(e) {
-  try {
-    if (!e || !e.parameter || !e.parameter.payload) {
-      throw new Error('送信データがありません。');
+    h1 {
+      text-align: center;
+      font-size: 1.4rem;
+      color: #1a73e8;
+      margin: 16px 0 4px;
     }
+    .subtitle {
+      text-align: center;
+      font-size: 0.85rem;
+      color: #666;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    }
+    .section-title {
+      font-size: 1.05rem;
+      font-weight: bold;
+      color: #1a73e8;
+      border-bottom: 2px solid #e8f0fe;
+      padding-bottom: 8px;
+      margin-bottom: 16px;
+    }
+    .activity-card { display: none; }
+    .activity-card.active { display: block; }
+    .field { margin-bottom: 14px; }
+    label.field-label {
+      display: block;
+      font-size: 0.88rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .required::after { content: ' ＊'; color: #d32f2f; }
+    .help { font-size: 0.78rem; color: #777; margin-bottom: 3px; }
+    select, input[type="text"], input[type="number"], input[type="date"], textarea {
+      width: 100%;
+      max-width: 100%;
+      padding: 9px 11px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 0.93rem;
+      background: #fff;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    select:focus, input:focus, textarea:focus {
+      outline: none;
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(26,115,232,0.15);
+    }
+    select:disabled { background: #f5f5f5; color: #999; }
+    textarea { min-height: 90px; resize: vertical; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } }
+    .checkbox-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .chip {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 14px;
+      border: 1.5px solid #dadce0;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 0.88rem;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .chip:hover { border-color: #1a73e8; background: #e8f0fe; }
+    .chip input { display: none; }
+    .chip.checked { border-color: #1a73e8; background: #e8f0fe; color: #1a73e8; font-weight: 600; }
+    .submit-btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.2s;
+    }
+    .submit-btn:hover { background: #1558b0; }
+    .submit-btn:disabled { background: #aaa; cursor: not-allowed; }
+    #successMsg {
+      display: none;
+      text-align: center;
+      padding: 40px 20px;
+      background: #fff;
+      border-radius: 8px;
+      color: #188038;
+      font-size: 1.15rem;
+    }
+  </style>
+</head>
+<body>
 
-    var formData = JSON.parse(e.parameter.payload);
-    var result = saveReport(formData);
+<h1>営業活動日報</h1>
+<p class="subtitle">活動契機を選択すると該当セクションが表示されます</p>
 
-    return ContentService
-      .createTextOutput(JSON.stringify(result))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch (err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        ok: false,
-        error: err && err.message ? err.message : String(err)
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}
+<form id="reportForm" onsubmit="return false;">
 
-function saveReport(formData) {
-  if (!formData || typeof formData !== 'object') {
-    throw new Error('送信データが不正です。');
-  }
+  <!-- ========== 基本情報 ========== -->
+  <div class="card">
+    <div class="section-title">基本情報</div>
 
-  var ss = SpreadsheetApp.openById(IWATE_SPREADSHEET_ID);
-  var lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    writeAnswer(ss, formData);
-    writeProspects(ss, formData);
-  } finally {
-    lock.releaseLock();
-  }
+    <div class="field">
+      <label class="field-label required" for="area">エリア</label>
+      <select id="area" required onchange="onAreaChange()" disabled>
+        <option value="">読み込み中…</option>
+      </select>
+    </div>
 
-  sendDailyReportEmail(ss, formData);
-  return { ok: true };
-}
+    <div class="grid2">
+      <div class="field">
+        <label class="field-label required" for="branch">支店</label>
+        <select id="branch" required onchange="onBranchChange()" disabled>
+          <option value="">先にエリアを選択</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label required" for="staff">担当者</label>
+        <select id="staff" required disabled>
+          <option value="">先に支店を選択</option>
+        </select>
+      </div>
+    </div>
 
-// ============================================================
-// フォーム送信時に自動実行（onFormSubmit トリガー）
-// ============================================================
-function onFormSubmit(e) {
-  var ss      = SpreadsheetApp.openById(IWATE_SPREADSHEET_ID);
-  var jsonStr = e.values[IWATE_DATA_COL_INDEX];
+    <div class="grid2">
+      <div class="field">
+        <label class="field-label required">日付</label>
+        <input type="date" id="actDate" required>
+      </div>
+      <div class="field">
+        <label class="field-label required">時間帯</label>
+        <select id="timeSlot" required>
+          <option value="">選択</option>
+          <option>午前</option><option>午後</option><option>午前午後まとめて</option>
+        </select>
+      </div>
+    </div>
 
-  if (!jsonStr) {
-    Logger.log('JSONデータが空です');
-    return;
-  }
+    <div class="field">
+      <label class="field-label">営業活動契機（複数選択可）</label>
+      <div class="checkbox-row" id="activityTypeGroup">
+        <label class="chip"><input type="checkbox" value="ブロック" onchange="toggleChip(this,'block')">ブロック</label>
+        <label class="chip"><input type="checkbox" value="テナントイベント" onchange="toggleChip(this,'tenant')">テナントイベント</label>
+        <label class="chip"><input type="checkbox" value="社内イベント" onchange="toggleChip(this,'internal')">社内イベント</label>
+        <label class="chip"><input type="checkbox" value="施行後訪問" onchange="toggleChip(this,'post')">施行後訪問</label>
+        <label class="chip"><input type="checkbox" value="既存会員" onchange="toggleChip(this,'existing')">既存会員</label>
+        <label class="chip"><input type="checkbox" value="その他新規" onchange="toggleChip(this,'other')">その他新規</label>
+      </div>
+    </div>
+  </div>
 
-  var formData;
-  try {
-    formData = JSON.parse(jsonStr);
-  } catch (err) {
-    Logger.log('JSON解析エラー: ' + err.message);
-    return;
-  }
+  <!-- ========== ブロック ========== -->
+  <div class="card activity-card" id="section-block">
+    <div class="section-title">ブロック</div>
+    <div class="field">
+      <label class="field-label">ブロック地</label>
+      <div class="help">住所（市町村～町/字まで）例）XX市XX町XX</div>
+      <input type="text" id="blockArea">
+    </div>
+    <div class="field">
+      <label class="field-label">ブロック活動時間</label>
+      <select id="blockTime" class="time-select"></select>
+    </div>
+    <div class="grid2">
+      <div class="field"><label class="field-label">訪問件数</label><input type="number" id="blockVisits" min="0"></div>
+      <div class="field"><label class="field-label">在宅件数</label><div class="help">インターホンに出てくれた数（居留守含む）</div><input type="number" id="blockAtHome" min="0"></div>
+      <div class="field"><label class="field-label">アプローチ数</label><div class="help">直接対面でお話しができた数</div><input type="number" id="blockApproach" min="0"></div>
+      <div class="field"><label class="field-label">プレゼン数</label><div class="help">互助会のプレゼンができた数</div><input type="number" id="blockPresent" min="0"></div>
+      <div class="field"><label class="field-label">クロージング数</label><div class="help">契約の決断を促した数</div><input type="number" id="blockClosing" min="0"></div>
+      <div class="field"><label class="field-label">見込み件数</label><div class="help">濃い薄い限らず見込みを獲得できた件数</div><input type="number" id="blockProspect" min="0"></div>
+      <div class="field"><label class="field-label">契約件数</label><input type="number" id="blockContract" min="0"></div>
+      <div class="field"><label class="field-label">契約口数</label><input type="number" id="blockContractCnt" min="0"></div>
+      <div class="field"><label class="field-label">リザべ件数（日時指定有）</label><input type="number" id="blockReserveFixed" min="0"></div>
+      <div class="field"><label class="field-label">リザべ件数（日時未指定）</label><input type="number" id="blockReserveUnfixed" min="0"></div>
+    </div>
+  </div>
 
-  writeAnswer(ss, formData);
-  writeProspects(ss, formData);
-  sendDailyReportEmail(ss, formData);
-}
+  <!-- ========== テナントイベント ========== -->
+  <div class="card activity-card" id="section-tenant">
+    <div class="section-title">テナントイベント</div>
+    <div class="field"><label class="field-label">テナントイベント活動時間</label><select id="tenantTime" class="time-select"></select></div>
+    <div class="grid2">
+      <div class="field"><label class="field-label">声掛け数</label><input type="number" id="tenantGreeting" min="0"></div>
+      <div class="field"><label class="field-label">アプローチ数</label><div class="help">直接対面でお話しができた数</div><input type="number" id="tenantApproach" min="0"></div>
+      <div class="field"><label class="field-label">プレゼン数</label><div class="help">互助会のプレゼンができた数</div><input type="number" id="tenantPresent" min="0"></div>
+      <div class="field"><label class="field-label">クロージング数</label><div class="help">契約の決断を促した数</div><input type="number" id="tenantClosing" min="0"></div>
+      <div class="field"><label class="field-label">見込み件数</label><div class="help">濃い薄い限らず見込みを獲得できた件数</div><input type="number" id="tenantProspect" min="0"></div>
+      <div class="field"><label class="field-label">リザべ件数（日時指定有）</label><input type="number" id="tenantReserveFixed" min="0"></div>
+      <div class="field"><label class="field-label">リザべ件数（日時未指定）</label><input type="number" id="tenantReserveUnfixed" min="0"></div>
+      <div class="field"><label class="field-label">契約件数</label><input type="number" id="tenantContract" min="0"></div>
+      <div class="field"><label class="field-label">契約口数</label><input type="number" id="tenantContractCnt" min="0"></div>
+    </div>
+  </div>
 
-// ============================================================
-// 回答シートへの書き込み
-// ============================================================
-function writeAnswer(ss, data) {
-  var answerSheetName = getReportAnswerSheetName(data);
-  var sheet = ss.getSheetByName(answerSheetName);
-  if (!sheet) {
-    sheet = ss.insertSheet(answerSheetName);
-  }
+  <!-- ========== 社内イベント ========== -->
+  <div class="card activity-card" id="section-internal">
+    <div class="section-title">社内イベント</div>
+    <div class="field"><label class="field-label">社内イベント活動時間</label><select id="internalTime" class="time-select"></select></div>
+    <div class="grid2">
+      <div class="field"><label class="field-label">アプローチ数</label><div class="help">直接対面でお話しができた数</div><input type="number" id="internalApproach" min="0"></div>
+      <div class="field"><label class="field-label">プレゼン数</label><div class="help">互助会のプレゼンができた数</div><input type="number" id="internalPresent" min="0"></div>
+      <div class="field"><label class="field-label">クロージング数</label><div class="help">契約の決断を促した数</div><input type="number" id="internalClosing" min="0"></div>
+      <div class="field"><label class="field-label">見込み件数</label><div class="help">濃い薄い限らず見込みを獲得できた件数</div><input type="number" id="internalProspect" min="0"></div>
+      <div class="field"><label class="field-label">契約件数</label><input type="number" id="internalContract" min="0"></div>
+      <div class="field"><label class="field-label">契約口数</label><input type="number" id="internalContractCnt" min="0"></div>
+    </div>
+  </div>
 
-  var answerHeaders = [
-      'タイムスタンプ','エリア','支店','担当者','日付','時間帯','営業活動契機',
-      'ブロック地','ブロック活動時間','ブロック移動時間','ブロック訪問件数','ブロック在宅件数',
-      'ブロックアプローチ数','ブロックプレゼン数','ブロッククロージング数',
-      'ブロック見込み件数','ブロック契約件数','ブロック契約口数',
-      'ブロックリザべ（日時指定有）','ブロックリザべ（日時未指定）',
-      'テナント活動時間','テナント移動時間','テナント声掛け数','テナントアプローチ数',
-      'テナントプレゼン数','テナントクロージング数','テナント見込み件数',
-      'テナントリザべ（日時指定有）','テナントリザべ（日時未指定）',
-      'テナント契約件数','テナント契約口数',
-      '社内活動時間','社内移動時間','社内アプローチ数','社内プレゼン数',
-      '社内クロージング数','社内見込み件数','社内契約件数','社内契約口数',
-      '施行後活動時間','施行後移動時間','施行後アプローチ数','施行後プレゼン数',
-      '施行後クロージング数','施行後見込み件数','施行後契約件数','施行後契約口数',
-      '既存活動時間','既存移動時間','既存訪問件数','既存アプローチ数','既存プレゼン数',
-      '既存クロージング数','既存見込み件数','既存契約件数','既存契約口数',
-      'その他活動時間','その他移動時間','その他アプローチ数','その他プレゼン数','その他クロージング数',
-      'その他リザべ（日時指定有）','その他リザべ（日時未指定）',
-      'その他見込み件数','その他契約件数','その他契約口数',
-      '総移動時間','保険獲得件数','保険アプローチ数','保険プレゼン数','保険クロージング数',
-      '自主リクルート声かけ数','振り返り','印象に残ったお客様の一言',
-      '見込みランク','お客様の名前','メモ（会話内容など）','次回訪問予定日','居住地区'
-  ];
-  ensureProspectHeaders(sheet, answerHeaders);
+  <!-- ========== 施行後訪問 ========== -->
+  <div class="card activity-card" id="section-post">
+    <div class="section-title">施行後訪問</div>
+    <div class="field"><label class="field-label">施行後訪問活動時間</label><select id="postTime" class="time-select"></select></div>
+    <div class="grid2">
+      <div class="field"><label class="field-label">アプローチ数</label><div class="help">直接対面でお話しができた数</div><input type="number" id="postApproach" min="0"></div>
+      <div class="field"><label class="field-label">プレゼン数</label><div class="help">互助会のプレゼンができた数</div><input type="number" id="postPresent" min="0"></div>
+      <div class="field"><label class="field-label">クロージング数</label><div class="help">契約の決断を促した数</div><input type="number" id="postClosing" min="0"></div>
+      <div class="field"><label class="field-label">見込み件数</label><div class="help">濃い薄い限らず見込みを獲得できた件数</div><input type="number" id="postProspect" min="0"></div>
+      <div class="field"><label class="field-label">契約件数</label><input type="number" id="postContract" min="0"></div>
+      <div class="field"><label class="field-label">契約口数</label><input type="number" id="postContractCnt" min="0"></div>
+    </div>
+  </div>
 
-  var answerValues = [
-    new Date(), data.area, data.branch, data.staff, data.date, data.timeSlot,
-    csvValue(data.activityTypes),
-    data.blockArea,        data.blockTime,          data.blockTravelTime, data.blockVisits,
-    data.blockAtHome,      data.blockApproach,      data.blockPresent,
-    data.blockClosing,     data.blockProspect,      data.blockContract,
-    data.blockContractCnt, data.blockReserveFixed,  data.blockReserveUnfixed,
-    data.tenantTime,       data.tenantTravelTime,   data.tenantGreeting, data.tenantApproach,
-    data.tenantPresent,    data.tenantClosing,      data.tenantProspect,
-    data.tenantReserveFixed, data.tenantReserveUnfixed,
-    data.tenantContract,   data.tenantContractCnt,
-    data.internalTime,     data.internalTravelTime, data.internalApproach, data.internalPresent,
-    data.internalClosing,  data.internalProspect,   data.internalContract,
-    data.internalContractCnt,
-    data.postTime,         data.postTravelTime,     data.postApproach, data.postPresent,
-    data.postClosing,      data.postProspect,       data.postContract,
-    data.postContractCnt,
-    data.existingTime,     data.existingTravelTime, data.existingVisits, data.existingApproach,
-    data.existingPresent,  data.existingClosing,    data.existingProspect,
-    data.existingContract, data.existingContractCnt,
-    data.otherTime,        data.otherTravelTime,    data.otherApproach, data.otherPresent,
-    data.otherClosing,     data.otherReserveFixed,  data.otherReserveUnfixed,
-    data.otherProspect,    data.otherContract,      data.otherContractCnt,
-    data.totalTravelTime,  data.insurance,        data.insuranceApproach,  data.insurancePresent,
-    data.insuranceClosing, data.recruitCall,
-    data.reflection,       data.customerQuote,
-    joinProspectField(data.prospectDetails, 'rank'),
-    joinProspectField(data.prospectDetails, 'name'),
-    joinProspectField(data.prospectDetails, 'conversation'),
-    joinNextVisitField(data.prospectDetails),
-    joinProspectField(data.prospectDetails, 'residence')
-  ];
-  appendReportRows(sheet, answerHeaders, [answerValues]);
-}
+  <!-- ========== 既存会員 ========== -->
+  <div class="card activity-card" id="section-existing">
+    <div class="section-title">既存会員</div>
+    <div class="field"><label class="field-label">既存会員活動時間</label><select id="existingTime" class="time-select"></select></div>
+    <div class="grid2">
+      <div class="field"><label class="field-label">訪問件数</label><input type="number" id="existingVisits" min="0"></div>
+      <div class="field"><label class="field-label">アプローチ数</label><div class="help">直接対面でお話しができた数</div><input type="number" id="existingApproach" min="0"></div>
+      <div class="field"><label class="field-label">プレゼン数</label><div class="help">互助会のプレゼンができた数</div><input type="number" id="existingPresent" min="0"></div>
+      <div class="field"><label class="field-label">クロージング数</label><div class="help">契約の決断を促した数</div><input type="number" id="existingClosing" min="0"></div>
+      <div class="field"><label class="field-label">見込み件数</label><div class="help">濃い薄い限らず見込みを獲得できた件数</div><input type="number" id="existingProspect" min="0"></div>
+      <div class="field"><label class="field-label">契約件数</label><input type="number" id="existingContract" min="0"></div>
+      <div class="field"><label class="field-label">契約口数</label><input type="number" id="existingContractCnt" min="0"></div>
+    </div>
+  </div>
 
-// 既存列・既存データは移動せず、旧見出しの表記更新と不足列の末尾追加だけ行います。
-function ensureProspectHeaders(sheet, requiredHeaders) {
-  var required = requiredHeaders || [
-    '保険アプローチ数', '保険プレゼン数', '保険クロージング数',
-    '見込みランク', 'お客様の名前', 'メモ（会話内容など）', '次回訪問予定日', '居住地区'
-  ];
-  if (sheet.getLastRow() === 0) {
-    ensureReportColumnCapacity(sheet, required.length);
-    sheet.getRange(1, 1, 1, required.length).setValues([required]);
-  } else {
-    var lastColumn = sheet.getLastColumn();
-    var headers = sheet.getRange(1, 1, 1, lastColumn).getDisplayValues()[0];
-    var normalized = headers.map(normalizeReportHeader);
-    var missing = required.filter(function(header) {
-      return normalized.indexOf(normalizeReportHeader(header)) === -1;
+  <!-- ========== その他新規 ========== -->
+  <div class="card activity-card" id="section-other">
+    <div class="section-title">その他新規</div>
+    <div class="field"><label class="field-label">その他新規活動時間</label><select id="otherTime" class="time-select"></select></div>
+    <div class="grid2">
+      <div class="field"><label class="field-label">アプローチ数</label><div class="help">直接対面でお話しができた数</div><input type="number" id="otherApproach" min="0"></div>
+      <div class="field"><label class="field-label">プレゼン数</label><div class="help">互助会のプレゼンができた数</div><input type="number" id="otherPresent" min="0"></div>
+      <div class="field"><label class="field-label">クロージング数</label><div class="help">契約の決断を促した数</div><input type="number" id="otherClosing" min="0"></div>
+      <div class="field"><label class="field-label">リザべ件数（日時指定有）</label><input type="number" id="otherReserveFixed" min="0"></div>
+      <div class="field"><label class="field-label">リザべ件数（日時未指定）</label><input type="number" id="otherReserveUnfixed" min="0"></div>
+      <div class="field"><label class="field-label">見込み件数</label><div class="help">濃い薄い限らず見込みを獲得できた件数</div><input type="number" id="otherProspect" min="0"></div>
+      <div class="field"><label class="field-label">契約件数</label><input type="number" id="otherContract" min="0"></div>
+      <div class="field"><label class="field-label">契約口数</label><input type="number" id="otherContractCnt" min="0"></div>
+    </div>
+  </div>
+
+  <!-- ========== 共通項目 ========== -->
+  <div class="card">
+    <div class="section-title">共通項目</div>
+    <div class="field">
+      <label class="field-label required" for="totalTravelTime">総移動時間</label>
+      <select id="totalTravelTime" required>
+        <option value="">選択</option>
+        <option>15分</option>
+        <option>30分</option>
+        <option>45分</option>
+        <option>1時間</option>
+        <option>1時間15分</option>
+        <option>1時間30分</option>
+        <option>1時間45分</option>
+        <option>2時間</option>
+        <option>2時間15分</option>
+        <option>2時間30分</option>
+        <option>2時間45分</option>
+        <option>3時間</option>
+      </select>
+    </div>
+    <div class="grid2">
+      <div class="field"><label class="field-label">保険アプローチ数</label><div class="help">少額短期保険について直接対面でお話しができた数</div><input type="number" id="insuranceApproach" min="0"></div>
+      <div class="field"><label class="field-label">保険プレゼン数</label><div class="help">保険のプレゼンができた数</div><input type="number" id="insurancePresent" min="0"></div>
+      <div class="field"><label class="field-label">保険クロージング数</label><div class="help">保険の契約を促した数</div><input type="number" id="insuranceClosing" min="0"></div>
+      <div class="field"><label class="field-label">保険獲得件数</label><input type="number" id="insurance" min="0"></div>
+    </div>
+    <div class="field">
+      <label class="field-label">自主リクルート声かけ数</label>
+      <input type="number" id="recruitCall" min="0">
+    </div>
+    <div class="field">
+      <label class="field-label required">振り返り（成功・課題・対策）</label>
+      <textarea id="reflection" required placeholder="本日の成功点・課題・次回への対策を記入してください"></textarea>
+    </div>
+    <div class="field">
+      <label class="field-label">印象に残ったお客様の一言</label>
+      <textarea id="customerQuote" placeholder="任意"></textarea>
+    </div>
+  </div>
+
+  <button type="button" class="submit-btn" id="submitBtn" onclick="handleSubmit()">送信する</button>
+</form>
+
+<div id="successMsg">
+  <p style="font-size:2rem;margin-bottom:12px;">✓</p>
+  <p>送信が完了しました。<br>ご記入ありがとうございました。</p>
+</div>
+
+<script>
+  var FORM_ID  = '1FAIpQLSdeKEZKKqj--l8LheI1QTfXX9xfOfOCeAiMycEav0r2EvdpvQ';
+  var ENTRY_ID = 'entry.2133402778';
+
+  var MASTER = null;
+
+  fetch('./master.json')
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data) {
+      MASTER = data;
+      var areaEl = document.getElementById('area');
+      areaEl.innerHTML = '<option value="">選択してください</option>';
+      Object.keys(MASTER).forEach(function(a) {
+        var opt = document.createElement('option');
+        opt.value = a; opt.textContent = a;
+        areaEl.appendChild(opt);
+      });
+      areaEl.disabled = false;
+    })
+    .catch(function() {
+      var areaEl = document.getElementById('area');
+      areaEl.innerHTML = '<option value="">読み込み失敗 - ページを再読み込みしてください</option>';
     });
-    ensureReportColumnCapacity(sheet, lastColumn + missing.length);
-    sheet.getRange(1, 1, 1, lastColumn).setValues([normalized]);
-    if (missing.length > 0) {
-      sheet.getRange(1, lastColumn + 1, 1, missing.length).setValues([missing]);
-    }
-  }
-  sheet.setFrozenRows(1);
-}
 
-function normalizeReportHeader(value) {
-  var header = String(value || '').trim();
-  if (header === '会話内容（ランクの理由）' || header === '会話内容(ランクの理由)' ||
-      header === 'メモ（会話内容）') {
-    return 'メモ（会話内容など）';
+  function onAreaChange() {
+    var area     = document.getElementById('area').value;
+    var branchEl = document.getElementById('branch');
+    var staffEl  = document.getElementById('staff');
+    branchEl.innerHTML = '<option value="">選択してください</option>';
+    staffEl.innerHTML  = '<option value="">先に支店を選択</option>';
+    staffEl.disabled   = true;
+    if (!area) { branchEl.disabled = true; return; }
+    branchEl.disabled = false;
+    Object.keys(MASTER[area]).forEach(function(b) {
+      var opt = document.createElement('option');
+      opt.value = b; opt.textContent = b;
+      branchEl.appendChild(opt);
+    });
   }
-  return header.replace(/見込(?!み)/g, '見込み');
-}
 
-function ensureReportColumnCapacity(sheet, columnCount) {
-  if (sheet.getMaxColumns() < columnCount) {
-    sheet.insertColumnsAfter(sheet.getMaxColumns(), columnCount - sheet.getMaxColumns());
+  function onBranchChange() {
+    var area    = document.getElementById('area').value;
+    var branch  = document.getElementById('branch').value;
+    var staffEl = document.getElementById('staff');
+    staffEl.innerHTML = '<option value="">選択してください</option>';
+    if (!area || !branch) { staffEl.disabled = true; return; }
+    staffEl.disabled = false;
+    (MASTER[area][branch] || []).forEach(function(s) {
+      var opt = document.createElement('option');
+      opt.value = s; opt.textContent = s;
+      staffEl.appendChild(opt);
+    });
   }
-}
 
-// 列位置ではなく見出しをキーに保存し、既存シートの列順の違いによるずれを防ぎます。
-function appendReportRows(sheet, sourceHeaders, sourceRows) {
-  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
-  var positions = {};
-  sourceHeaders.forEach(function(header, index) {
-    positions[normalizeReportHeader(header)] = index;
-  });
-  var rows = sourceRows.map(function(sourceRow) {
-    return headers.map(function(header) {
-      var key = normalizeReportHeader(header);
-      if (!Object.prototype.hasOwnProperty.call(positions, key)) return '';
-      var value = sourceRow[positions[key]];
-      return value === null || value === undefined ? '' : value;
+  document.getElementById('actDate').value = new Date().toISOString().split('T')[0];
+
+  var times = ['','30分','1時間','1時間30分','2時間','2時間30分','3時間','3時間30分',
+               '4時間','4時間30分','5時間','5時間30分','6時間','6時間30分','7時間','7時間30分','8時間'];
+  document.querySelectorAll('.time-select').forEach(function(sel) {
+    times.forEach(function(t) {
+      var opt = document.createElement('option');
+      opt.value = t; opt.textContent = t === '' ? '選択' : t;
+      sel.appendChild(opt);
     });
   });
-  if (rows.length === 0) return;
-  var startRow = Math.max(sheet.getLastRow() + 1, 2);
-  var requiredLastRow = startRow + rows.length - 1;
-  if (sheet.getMaxRows() < requiredLastRow) {
-    sheet.insertRowsAfter(sheet.getMaxRows(), requiredLastRow - sheet.getMaxRows());
-  }
-  sheet.getRange(startRow, 1, rows.length, headers.length).setValues(rows);
-}
 
-// ============================================================
-// 岩手_見込みシートへの書き込み
-// 1行につき1見込として、活動契機別の見込数と見込詳細を順番に対応付けます。
-// ============================================================
-function writeProspects(ss, data) {
-  var iwateProspectDetails = Array.isArray(data.prospectDetails) ? data.prospectDetails : [];
-  var sources = buildProspectSources(data);
-
-  // 見込がない回答では、岩手_見込みシートへ行を追加しません。
-  if (iwateProspectDetails.length === 0 && sources.length === 0) return;
-
-  var prospectSheetName = getReportProspectSheetName(data);
-  var sheet = ss.getSheetByName(prospectSheetName);
-  if (!sheet) sheet = ss.insertSheet(prospectSheetName);
-
-  var headers = [
-    'タイムスタンプ', 'エリア', '支店', '担当者', '日付', '時間帯',
-    '営業活動契機', '見込み数', '見込みランク', 'お客様の名前',
-    'メモ（会話内容など）', '次回訪問予定日', '居住地区'
-  ];
-
-  ensureProspectHeaders(sheet, headers);
-
-  var timestamp = new Date();
-  var rowCount = Math.max(iwateProspectDetails.length, sources.length);
-  var rows = [];
-
-  for (var i = 0; i < rowCount; i++) {
-    var iwateProspectDetail = iwateProspectDetails[i] || {};
-    var source = sources[i] || '未紐付け';
-    rows.push([
-      timestamp,
-      data.area || '',
-      data.branch || '',
-      data.staff || '',
-      data.date || '',
-      data.timeSlot || '',
-      source,
-      1,
-      iwateProspectDetail.rank || '',
-      iwateProspectDetail.name || '',
-      iwateProspectDetail.conversation || '',
-      formatNextVisitDate(iwateProspectDetail),
-      iwateProspectDetail.residence || ''
-    ]);
+  function toggleChip(cb, sectionId) {
+    cb.parentElement.classList.toggle('checked', cb.checked);
+    document.getElementById('section-' + sectionId).classList.toggle('active', cb.checked);
   }
 
-  var startRow = Math.max(sheet.getLastRow() + 1, 2);
-  appendReportRows(sheet, headers, rows);
-  sheet.getRange(startRow, 1, rows.length, sheet.getLastColumn()).setWrap(true);
-}
+  function handleSubmit() {
+    var area       = document.getElementById('area').value;
+    var branch     = document.getElementById('branch').value;
+    var staff      = document.getElementById('staff').value;
+    var date       = document.getElementById('actDate').value;
+    var timeSlot   = document.getElementById('timeSlot').value;
+    var reflection = document.getElementById('reflection').value.trim();
 
-function buildProspectSources(data) {
-  var definitions = [
-    ['ブロック', data.blockProspect],
-    ['テナントイベント', data.tenantProspect],
-    ['社内イベント', data.internalProspect],
-    ['施行後訪問', data.postProspect],
-    ['既存会員', data.existingProspect],
-    ['その他新規', data.otherProspect]
-  ];
-  var result = [];
-
-  definitions.forEach(function(definition) {
-    var count = parseInt(definition[1], 10);
-    if (isNaN(count) || count < 1) return;
-    for (var i = 0; i < count; i++) result.push(definition[0]);
-  });
-
-  return result;
-}
-
-// ============================================================
-// 個別日報メール送信（onFormSubmit から呼び出し）
-// ============================================================
-function sendDailyReportEmail(ss, formData) {
-  var area      = formData.area   || '';
-  var branch    = formData.branch || '';
-  var staffName = formData.staff  || '';
-  var date      = formData.date   || '';
-
-  var toList = [];
-  var ccList = [];
-  var staffMail = lookupStaffMail(ss.getSheetByName(IWATE_SHEET_STAFF_MAIL), staffName, branch);
-  if (staffMail) toList.push(staffMail);
-
-  ccList = ccList.concat(lookupMails(ss.getSheetByName(IWATE_SHEET_BRANCH), branch));
-  ccList = ccList.concat(lookupMails(ss.getSheetByName(IWATE_SHEET_AREA), area));
-
-  toList = uniqueEmails(toList);
-  ccList = uniqueEmails(ccList).filter(function(mailAddress) {
-    return toList.indexOf(mailAddress) === -1;
-  });
-
-  // 担当者メールが未登録でも、支店・エリアの管理者には送信します。
-  if (toList.length === 0 && ccList.length > 0) {
-    toList.push(ccList.shift());
-  }
-
-  if (toList.length === 0 && ccList.length === 0) {
-    Logger.log('送信先なし: 支店=' + branch + ' 担当者=' + staffName);
-    return;
-  }
-
-  try {
-    var options = {
-      name: '営業活動日報',
-      from: IWATE_SENDER_EMAIL
-    };
-    if (ccList.length > 0) options.cc = ccList.join(',');
-    if (staffMail) options.replyTo = staffMail;
-
-    GmailApp.sendEmail(
-      toList.join(','),
-      buildSubject(date, branch, staffName),
-      buildBody(formData),
-      options
-    );
-    Logger.log('送信完了 TO:' + toList + ' CC:' + ccList);
-  } catch (err) {
-    Logger.log('メール送信エラー: ' + err.message);
-  }
-}
-
-// ============================================================
-// マスタ検索ヘルパー（個別日報用）
-// ============================================================
-function lookupStaffMail(sheet, name, branch) {
-  if (!sheet) return '';
-  var data = sheet.getDataRange().getValues();
-  for (var i = 1; i < data.length; i++) {
-    if (iwateNormalizePersonName(data[i][0]) === iwateNormalizePersonName(name) &&
-        iwateNormalizeMasterKey(data[i][1]) === iwateNormalizeMasterKey(branch)) {
-      return String(data[i][2]).trim();
-    }
-  }
-  return '';
-}
-
-function lookupMails(sheet, key) {
-  if (!sheet || !key) return [];
-  var data   = sheet.getDataRange().getValues();
-  var result = [];
-  for (var i = 1; i < data.length; i++) {
-    if (iwateNormalizeMasterKey(data[i][0]) === iwateNormalizeMasterKey(key)) {
-      var mail1 = String(data[i][2] || '').trim();
-      var mail2 = String(data[i][4] || '').trim();
-      if (mail1) result.push(mail1);
-      if (mail2) {
-        mail2.split(',').forEach(function(m) {
-          var t = m.trim();
-          if (t) result.push(t);
-        });
-      }
-    }
-  }
-  return uniqueEmails(result);
-}
-
-function iwateNormalizePersonName(value) {
-  return String(value || '').replace(/[\s　]/g, '').trim();
-}
-
-function iwateNormalizeMasterKey(value) {
-  return String(value || '')
-    .replace(/[\s　]/g, '')
-    .replace(/支店$/, '')
-    .replace(/^岩手加入推進第1課$/, '岩手1')
-    .replace(/^岩手加入推進第2課$/, '岩手2')
-    .replace(/^近畿加入推進第1課$/, '近畿1')
-    .trim();
-}
-
-function getReportAnswerSheetName(data) {
-  return iwateNormalizeMasterKey(data && data.area) === '近畿1'
-    ? KINKI1_SHEET_ANSWER
-    : IWATE_SHEET_ANSWER;
-}
-
-function getReportProspectSheetName(data) {
-  return iwateNormalizeMasterKey(data && data.area) === '近畿1'
-    ? KINKI1_SHEET_PROSPECT
-    : IWATE_SHEET_PROSPECT;
-}
-
-function uniqueEmails(arr) {
-  return arr.filter(function(m, i, a) {
-    return m && a.indexOf(m) === i;
-  });
-}
-
-function csvValue(value) {
-  if (Array.isArray(value)) return value.join(',');
-  return String(value || '');
-}
-
-function joinProspectField(iwateProspectItems, key) {
-  if (!Array.isArray(iwateProspectItems)) return '';
-  return iwateProspectItems.map(function(iwateProspectItem) {
-    return String((iwateProspectItem && iwateProspectItem[key]) || '').trim();
-  }).join('\n');
-}
-
-function formatNextVisitDate(detail) {
-  if (!detail || typeof detail !== 'object') return '';
-  if (detail.nextVisitPlan === '予定日を選択する' ||
-      detail.nextVisitPlan === '訪問予定日を選択する') {
-    return String(detail.nextVisitDate || '').trim();
-  }
-  return String(detail.nextVisitPlan || '未定').trim();
-}
-
-function joinNextVisitField(items) {
-  if (!Array.isArray(items)) return '';
-  return items.map(function(item) {
-    return formatNextVisitDate(item);
-  }).join('\n');
-}
-
-// ============================================================
-// 個別日報 件名・本文生成（既存）
-// ============================================================
-function buildSubject(date, branch, staffName) {
-  var d = date ? date.replace(/-/g, '/') : '日付不明';
-  return '【営業活動日報】' + d + ' ' + branch + ' ' + staffName;
-}
-
-function buildBody(d) {
-  var lines = [];
-
-  lines.push('■ 基本情報');
-  lines.push('  エリア　　: ' + (d.area     || ''));
-  lines.push('  支店　　　: ' + (d.branch   || ''));
-  lines.push('  担当者　　: ' + (d.staff    || ''));
-  lines.push('  日付　　　: ' + (d.date     || ''));
-  lines.push('  時間帯　　: ' + (d.timeSlot || ''));
-  lines.push('  活動契機　: ' + (csvValue(d.activityTypes) || '（未選択）'));
-  lines.push('');
-
-  var types = csvValue(d.activityTypes).split(',').map(function(s){ return s.trim(); });
-
-  if (types.indexOf('ブロック') >= 0) {
-    lines.push('■ ブロック');
-    lines.push('  活動地　　　　　 : ' + n(d.blockArea));
-    lines.push('  活動時間　　　　 : ' + n(d.blockTime));
-    lines.push('  訪問件数　　　　 : ' + n(d.blockVisits));
-    lines.push('  在宅件数　　　　 : ' + n(d.blockAtHome));
-    lines.push('  アプローチ数　　 : ' + n(d.blockApproach));
-    lines.push('  プレゼン数　　　 : ' + n(d.blockPresent));
-    lines.push('  クロージング数　 : ' + n(d.blockClosing));
-    lines.push('  見込み件数　　　 : ' + n(d.blockProspect));
-    lines.push('  契約件数　　　　 : ' + n(d.blockContract));
-    lines.push('  契約口数　　　　 : ' + n(d.blockContractCnt));
-    lines.push('  リザべ（指定有） : ' + n(d.blockReserveFixed));
-    lines.push('  リザべ（未指定） : ' + n(d.blockReserveUnfixed));
-    lines.push('');
-  }
-
-  if (types.indexOf('テナントイベント') >= 0) {
-    lines.push('■ テナントイベント');
-    lines.push('  活動時間　　　　 : ' + n(d.tenantTime));
-    lines.push('  声掛け数　　　　 : ' + n(d.tenantGreeting));
-    lines.push('  アプローチ数　　 : ' + n(d.tenantApproach));
-    lines.push('  プレゼン数　　　 : ' + n(d.tenantPresent));
-    lines.push('  クロージング数　 : ' + n(d.tenantClosing));
-    lines.push('  見込み件数　　　 : ' + n(d.tenantProspect));
-    lines.push('  リザべ（指定有） : ' + n(d.tenantReserveFixed));
-    lines.push('  リザべ（未指定） : ' + n(d.tenantReserveUnfixed));
-    lines.push('  契約件数　　　　 : ' + n(d.tenantContract));
-    lines.push('  契約口数　　　　 : ' + n(d.tenantContractCnt));
-    lines.push('');
-  }
-
-  if (types.indexOf('社内イベント') >= 0) {
-    lines.push('■ 社内イベント');
-    lines.push('  活動時間　　　　 : ' + n(d.internalTime));
-    lines.push('  アプローチ数　　 : ' + n(d.internalApproach));
-    lines.push('  プレゼン数　　　 : ' + n(d.internalPresent));
-    lines.push('  クロージング数　 : ' + n(d.internalClosing));
-    lines.push('  見込み件数　　　 : ' + n(d.internalProspect));
-    lines.push('  契約件数　　　　 : ' + n(d.internalContract));
-    lines.push('  契約口数　　　　 : ' + n(d.internalContractCnt));
-    lines.push('');
-  }
-
-  if (types.indexOf('施行後訪問') >= 0) {
-    lines.push('■ 施行後訪問');
-    lines.push('  活動時間　　　　 : ' + n(d.postTime));
-    lines.push('  アプローチ数　　 : ' + n(d.postApproach));
-    lines.push('  プレゼン数　　　 : ' + n(d.postPresent));
-    lines.push('  クロージング数　 : ' + n(d.postClosing));
-    lines.push('  見込み件数　　　 : ' + n(d.postProspect));
-    lines.push('  契約件数　　　　 : ' + n(d.postContract));
-    lines.push('  契約口数　　　　 : ' + n(d.postContractCnt));
-    lines.push('');
-  }
-
-  if (types.indexOf('既存会員') >= 0) {
-    lines.push('■ 既存会員');
-    lines.push('  活動時間　　　　 : ' + n(d.existingTime));
-    lines.push('  訪問件数　　　　 : ' + n(d.existingVisits));
-    lines.push('  アプローチ数　　 : ' + n(d.existingApproach));
-    lines.push('  プレゼン数　　　 : ' + n(d.existingPresent));
-    lines.push('  クロージング数　 : ' + n(d.existingClosing));
-    lines.push('  見込み件数　　　 : ' + n(d.existingProspect));
-    lines.push('  契約件数　　　　 : ' + n(d.existingContract));
-    lines.push('  契約口数　　　　 : ' + n(d.existingContractCnt));
-    lines.push('');
-  }
-
-  if (types.indexOf('その他新規') >= 0) {
-    lines.push('■ その他新規');
-    lines.push('  活動時間　　　　 : ' + n(d.otherTime));
-    lines.push('  アプローチ数　　 : ' + n(d.otherApproach));
-    lines.push('  プレゼン数　　　 : ' + n(d.otherPresent));
-    lines.push('  クロージング数　 : ' + n(d.otherClosing));
-    lines.push('  リザべ（指定有） : ' + n(d.otherReserveFixed));
-    lines.push('  リザべ（未指定） : ' + n(d.otherReserveUnfixed));
-    lines.push('  見込み件数　　　 : ' + n(d.otherProspect));
-    lines.push('  契約件数　　　　 : ' + n(d.otherContract));
-    lines.push('  契約口数　　　　 : ' + n(d.otherContractCnt));
-    lines.push('');
-  }
-
-  var mailProspectDetails = Array.isArray(d.prospectDetails) ? d.prospectDetails : [];
-  var mailProspectSources = buildProspectSources(d);
-  var mailProspectCount = Math.max(mailProspectDetails.length, mailProspectSources.length);
-
-  lines.push('■ 見込み詳細');
-  if (mailProspectCount === 0) {
-    lines.push('  見込みなし');
-  } else {
-    var rankLabels = {
-      S: 'S（今月中に契約獲得）',
-      A: 'A（来月中に契約獲得）',
-      B: 'B（3ヶ月以内に契約獲得）',
-      C: 'C（半年以内に契約獲得）'
-    };
-
-    for (var prospectIndex = 0; prospectIndex < mailProspectCount; prospectIndex++) {
-      var mailProspect = mailProspectDetails[prospectIndex] || {};
-      var mailRank = iwateNormalizeRank(mailProspect.rank);
-      lines.push('  【見込み ' + (prospectIndex + 1) + '】');
-      lines.push('  営業活動契機　　　　　 : ' + (mailProspectSources[prospectIndex] || '未紐付け'));
-      lines.push('  名前　　　　　　　　　 : ' + n(mailProspect.name));
-      lines.push('  居住地区　　　　　　　 : ' + n(mailProspect.residence));
-      lines.push('  見込みランク　　　　　 : ' + (rankLabels[mailRank] || '－'));
-      lines.push('  メモ（会話内容など）　　 : ' + n(mailProspect.conversation));
-      lines.push('  次回訪問予定日　　　　　 : ' + n(formatNextVisitDate(mailProspect)));
-      lines.push('');
-    }
-  }
-  lines.push('');
-
-  lines.push('■ 共通項目');
-  lines.push('  総移動時間　　　　 : ' + n(d.totalTravelTime));
-  lines.push('  保険アプローチ数　　 : ' + n(d.insuranceApproach));
-  lines.push('  保険プレゼン数　　　 : ' + n(d.insurancePresent));
-  lines.push('  保険クロージング数　 : ' + n(d.insuranceClosing));
-  lines.push('  保険獲得件数　　　　 : ' + n(d.insurance));
-  lines.push('  自主リクルート声かけ数: ' + n(d.recruitCall));
-  lines.push('');
-  lines.push('■ 振り返り（成功・課題・対策）');
-  lines.push(d.reflection || '');
-  lines.push('');
-  if (d.customerQuote) {
-    lines.push('■ 印象に残ったお客様の一言');
-    lines.push(d.customerQuote);
-    lines.push('');
-  }
-
-  lines.push('----');
-  lines.push('※このメールは営業活動日報フォームから自動送信されています。');
-  lines.push('');
-  lines.push('■メンバーの追加・削除・回答後メールが届かない等の事象が発生したら、以下のフォームよりご連絡ください');
-  lines.push(IWATE_FORM_URL);
-
-  return lines.join('\n');
-}
-
-function n(val) {
-  return (val === '' || val === null || val === undefined) ? '-' : val;
-}
-
-// ============================================================
-// トリガー設定（初回1回だけ手動実行）
-// ============================================================
-function setTrigger() {
-  var ss = SpreadsheetApp.openById(IWATE_SPREADSHEET_ID);
-
-  ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction() === 'onFormSubmit') {
-      ScriptApp.deleteTrigger(t);
-    }
-  });
-
-  ScriptApp.newTrigger('onFormSubmit')
-    .forSpreadsheet(ss)
-    .onFormSubmit()
-    .create();
-
-  Logger.log('onFormSubmit トリガー設定完了');
-}
-
-// ============================================================
-// 週次見込レポート
-// スタッフ別のランク別見込数、先週比、配信月を除く直前3か月の
-// 実績をメールします。自動配信の時刻トリガーは現在設定していません。
-// ============================================================
-function sendWeeklyProspectReport() {
-  var ss = SpreadsheetApp.openById(IWATE_SPREADSHEET_ID);
-  var now = new Date();
-  var report = buildWeeklyProspectReport(ss, now);
-  var sentCount = 0;
-
-  report.staffReports.forEach(function(staffReport) {
-    var routing = getWeeklyProspectRouting(ss, staffReport.area, staffReport.branch, staffReport.staff);
-    if (routing.to.length === 0) {
-      Logger.log('週次見込レポート送信先なし: エリア=' + staffReport.area +
-        ' 支店=' + staffReport.branch + ' 担当者=' + staffReport.staff);
+    if (!area || !branch || !staff || !date || !timeSlot || !reflection) {
+      alert('必須項目（＊）をすべて入力・選択してください。');
       return;
     }
 
-    var options = {
-      name: '営業活動日報',
-      from: IWATE_SENDER_EMAIL
+    var totalTravelTime = document.getElementById('totalTravelTime');
+    if (!totalTravelTime.value) {
+      alert('総移動時間を選択してください。');
+      totalTravelTime.focus();
+      return;
+    }
+
+    var activityTypes = Array.from(document.querySelectorAll('#activityTypeGroup input:checked'))
+                             .map(function(cb){ return cb.value; }).join(', ');
+
+    function v(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+
+    var data = {
+      area: area, branch: branch, staff: staff, date: date,
+      timeSlot: timeSlot, activityTypes: activityTypes,
+      totalTravelTime: totalTravelTime.value,
+      blockArea: v('blockArea'), blockTime: v('blockTime'),
+      blockVisits: v('blockVisits'), blockAtHome: v('blockAtHome'),
+      blockApproach: v('blockApproach'), blockPresent: v('blockPresent'),
+      blockClosing: v('blockClosing'), blockProspect: v('blockProspect'),
+      blockContract: v('blockContract'), blockContractCnt: v('blockContractCnt'),
+      blockReserveFixed: v('blockReserveFixed'), blockReserveUnfixed: v('blockReserveUnfixed'),
+      tenantTime: v('tenantTime'), tenantGreeting: v('tenantGreeting'),
+      tenantApproach: v('tenantApproach'), tenantPresent: v('tenantPresent'),
+      tenantClosing: v('tenantClosing'), tenantProspect: v('tenantProspect'),
+      tenantReserveFixed: v('tenantReserveFixed'), tenantReserveUnfixed: v('tenantReserveUnfixed'),
+      tenantContract: v('tenantContract'), tenantContractCnt: v('tenantContractCnt'),
+      internalTime: v('internalTime'), internalApproach: v('internalApproach'),
+      internalPresent: v('internalPresent'), internalClosing: v('internalClosing'),
+      internalProspect: v('internalProspect'), internalContract: v('internalContract'),
+      internalContractCnt: v('internalContractCnt'),
+      postTime: v('postTime'), postApproach: v('postApproach'),
+      postPresent: v('postPresent'), postClosing: v('postClosing'),
+      postProspect: v('postProspect'), postContract: v('postContract'),
+      postContractCnt: v('postContractCnt'),
+      existingTime: v('existingTime'), existingVisits: v('existingVisits'),
+      existingApproach: v('existingApproach'), existingPresent: v('existingPresent'),
+      existingClosing: v('existingClosing'), existingProspect: v('existingProspect'),
+      existingContract: v('existingContract'), existingContractCnt: v('existingContractCnt'),
+      otherTime: v('otherTime'), otherApproach: v('otherApproach'),
+      otherPresent: v('otherPresent'), otherClosing: v('otherClosing'),
+      otherReserveFixed: v('otherReserveFixed'), otherReserveUnfixed: v('otherReserveUnfixed'),
+      otherProspect: v('otherProspect'), otherContract: v('otherContract'),
+      otherContractCnt: v('otherContractCnt'),
+      insuranceApproach: v('insuranceApproach'), insurancePresent: v('insurancePresent'),
+      insuranceClosing: v('insuranceClosing'),
+      insurance: v('insurance'), recruitCall: v('recruitCall'),
+      reflection: reflection,
+      customerQuote: v('customerQuote')
     };
-    if (routing.cc.length > 0) options.cc = routing.cc.join(',');
 
-    GmailApp.sendEmail(
-      routing.to.join(','),
-      report.subject,
-      staffReport.body,
-      options
-    );
+    var btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = '送信中…';
 
-    sentCount++;
-    Logger.log('週次見込レポート送信完了 ' + staffReport.branch + '/' + staffReport.staff +
-      ' TO:' + routing.to.join(',') + ' CC:' + routing.cc.join(','));
-  });
+    var body = new URLSearchParams();
+    body.append(ENTRY_ID, JSON.stringify(data));
 
-  if (sentCount === 0) {
-    throw new Error('週次見込レポートを送信できる宛先がマスタに見つかりませんでした。');
-  }
-}
-
-function getWeeklyProspectRouting(ss, area, branch, staffName) {
-  var toList = [];
-  var ccList = [];
-  var staffMail = lookupStaffMail(ss.getSheetByName(IWATE_SHEET_STAFF_MAIL), staffName, branch);
-  if (staffMail) toList.push(staffMail);
-
-  ccList = ccList.concat(lookupMails(ss.getSheetByName(IWATE_SHEET_BRANCH), branch));
-  ccList = ccList.concat(lookupMails(ss.getSheetByName(IWATE_SHEET_AREA), area));
-  toList = uniqueEmails(toList);
-  ccList = uniqueEmails(ccList).filter(function(mailAddress) {
-    return toList.indexOf(mailAddress) === -1;
-  });
-
-  // 担当者メールが未登録でも、支店・エリアの管理者には送れるようにします。
-  if (toList.length === 0 && ccList.length > 0) {
-    toList.push(ccList.shift());
-  }
-
-  return { to: toList, cc: ccList };
-}
-
-function buildWeeklyProspectReport(ss, now) {
-  var deliveryYmd = iwateDateYmd(now);
-  var week = iwateWeekRange(deliveryYmd);
-  var monthKeys = iwatePreviousMonthKeys(deliveryYmd, 3);
-  var currentMonthKey = deliveryYmd.substring(0, 7);
-  var hideHistoryRanks = currentMonthKey <= '2026-09';
-  var records = collectIwateProspectRecords(ss);
-  var staffReport = {};
-
-  records.forEach(function(record) {
-    var monthKey = record.dateYmd.substring(0, 7);
-    var isCurrentWeek = record.dateYmd >= week.currentStart && record.dateYmd < week.currentEnd;
-    var isPreviousWeek = record.dateYmd >= week.previousStart && record.dateYmd < week.currentStart;
-    var isCurrentMonth = monthKey === currentMonthKey;
-    var isHistoryMonth = monthKeys.indexOf(monthKey) !== -1;
-
-    if (!isCurrentWeek && !isPreviousWeek && !isCurrentMonth && !isHistoryMonth) return;
-
-    var branchName = record.branch || '支店未設定';
-    var staffName = record.staff || '担当者未設定';
-    var staffKey = branchName + '\u0000' + staffName;
-    if (!staffReport[staffKey]) {
-      staffReport[staffKey] = {
-        area: record.area || '',
-        branch: branchName,
-        staff: staffName,
-        displayName: branchName + '/' + staffName,
-        current: iwateEmptyRankCounts(),
-        previous: iwateEmptyRankCounts(),
-        currentMonth: iwateEmptyRankCounts(),
-        months: {}
-      };
-      monthKeys.forEach(function(key) {
-        staffReport[staffKey].months[key] = iwateEmptyRankCounts();
-      });
-    }
-
-    if (isCurrentWeek) {
-      iwateAddRankCount(staffReport[staffKey].current, record.rank, record.count);
-    }
-    if (isPreviousWeek) {
-      iwateAddRankCount(staffReport[staffKey].previous, record.rank, record.count);
-    }
-    if (isCurrentMonth) {
-      iwateAddRankCount(staffReport[staffKey].currentMonth, record.rank, record.count);
-    }
-    if (isHistoryMonth) {
-      iwateAddRankCount(staffReport[staffKey].months[monthKey], record.rank, record.count);
-    }
-  });
-
-  var staffKeys = Object.keys(staffReport).sort(function(a, b) {
-    return staffReport[a].displayName.localeCompare(staffReport[b].displayName, 'ja');
-  });
-  var lines = [];
-  var staffReports = [];
-  lines.push('■ 週間見込みレポート');
-  lines.push('');
-
-  if (staffKeys.length === 0) {
-    lines.push('対象期間の見込みデータはありません。');
-  }
-
-  staffKeys.forEach(function(staffKey) {
-    var item = staffReport[staffKey];
-    var staffLines = [];
-    staffLines.push('■ ' + item.displayName);
-    staffLines.push('今週　' + iwateWeeklyPerformanceText(item.current, item.previous));
-    staffLines.push('今月累計　' + iwateMonthlyPerformanceText(item.currentMonth, false));
-    staffLines.push('【直近3ヶ月の見込み数】');
-    monthKeys.forEach(function(key) {
-      staffLines.push(iwateDisplayShortMonth(key) + '　' + iwateMonthlyPerformanceText(item.months[key], hideHistoryRanks));
-    });
-    Array.prototype.push.apply(lines, staffLines);
-    lines.push('');
-
-    staffReports.push({
-      area: item.area,
-      branch: item.branch,
-      staff: item.staff,
-      body: ['■ 週間見込みレポート', ''].concat(staffLines).join('\n')
-    });
-  });
-
-  return {
-    subject: '【週間見込みレポート】',
-    body: lines.join('\n'),
-    staffReports: staffReports
-  };
-}
-
-function collectIwateProspectRecords(ss) {
-  var records = [];
-  records = records.concat(collectOldIwateProspectRecords(ss.getSheetByName(IWATE_OLD_PROSPECT_SHEET)));
-
-  var newSheet = ss.getSheetByName(IWATE_SHEET_PROSPECT) || ss.getSheetByName('岩手_見込');
-  records = records.concat(collectNewIwateProspectRecords(newSheet));
-  return records;
-}
-
-function collectOldIwateProspectRecords(sheet) {
-  if (!sheet || sheet.getLastRow() < 2) return [];
-
-  var values = sheet.getDataRange().getValues();
-  var headers = values[0].map(function(value) {
-    return String(value || '').replace(/\s/g, '');
-  });
-  var countColumns = [];
-
-  headers.forEach(function(header, index) {
-    if (/見込(?:み)?件数/.test(header)) countColumns.push(index);
-  });
-
-  if (countColumns.length === 0) {
-    throw new Error('「回答」シートに見込み件数の列が見つかりません。');
-  }
-
-  var result = [];
-  for (var rowIndex = 1; rowIndex < values.length; rowIndex++) {
-    var row = values[rowIndex];
-    var department = String(row[1] || '').trim();
-    if (IWATE_OLD_PROSPECT_DEPARTMENTS.indexOf(department) === -1) continue;
-
-    var dateYmd = iwateNormalizeSheetDate(row[4]);
-    if (!dateYmd || dateYmd > IWATE_OLD_PROSPECT_LAST_DATE) continue;
-
-    var total = 0;
-    countColumns.forEach(function(columnIndex) {
-      total += iwateSafeNumber(row[columnIndex]);
-    });
-    if (total <= 0) continue;
-
-    result.push({
-      dateYmd: dateYmd,
-      area: iwateOldDepartmentToArea(department),
-      branch: String(row[2] || '').trim(),
-      staff: String(row[3] || '').trim(),
-      rank: '－',
-      count: total
+    fetch('https://docs.google.com/forms/d/e/' + FORM_ID + '/formResponse', {
+      method: 'POST', mode: 'no-cors', body: body
+    })
+    .then(function() {
+      document.getElementById('reportForm').style.display = 'none';
+      document.getElementById('successMsg').style.display = 'block';
+      window.scrollTo(0, 0);
+    })
+    .catch(function(err) {
+      alert('送信に失敗しました。\n' + err.message);
+      btn.disabled = false;
+      btn.textContent = '送信する';
     });
   }
-  return result;
-}
+</script>
 
-function collectNewIwateProspectRecords(sheet) {
-  if (!sheet || sheet.getLastRow() < 2) return [];
+</body>
+</html>
 
-  var values = sheet.getDataRange().getValues();
-  var headers = values[0].map(normalizeReportHeader);
-  function column(header, fallback) {
-    var index = headers.indexOf(header);
-    return index === -1 ? fallback : index;
-  }
-  var dateColumn = column('日付', 4);
-  var areaColumn = column('エリア', 1);
-  var branchColumn = column('支店', 2);
-  var staffColumn = column('担当者', 3);
-  var countColumn = column('見込み数', 7);
-  var rankColumn = column('見込みランク', 8);
-  var result = [];
-
-  for (var rowIndex = 1; rowIndex < values.length; rowIndex++) {
-    var row = values[rowIndex];
-    var dateYmd = iwateNormalizeSheetDate(row[dateColumn]);
-    if (!dateYmd || dateYmd < IWATE_NEW_PROSPECT_FIRST_DATE) continue;
-
-    var count = iwateSafeNumber(row[countColumn]);
-    if (count <= 0) continue;
-
-    result.push({
-      dateYmd: dateYmd,
-      area: String(row[areaColumn] || '').trim(),
-      branch: String(row[branchColumn] || '').trim(),
-      staff: String(row[staffColumn] || '').trim(),
-      rank: iwateNormalizeRank(row[rankColumn]),
-      count: count
-    });
-  }
-  return result;
-}
-
-function iwateNormalizeRank(value) {
-  var rank = String(value || '').trim().toUpperCase().replace(/[ＳＡＢＣ]/g, function(letter) {
-    return String.fromCharCode(letter.charCodeAt(0) - 65248);
-  });
-  if (/^[SABC](?:$|[\s（(])/.test(rank)) return rank.charAt(0);
-  return '－';
-}
-
-function iwateOldDepartmentToArea(department) {
-  if (department === '岩手加入推進第1課') return '岩手1';
-  if (department === '岩手加入推進第2課') return '岩手2';
-  return department;
-}
-
-function iwateEmptyRankCounts() {
-  return { S: 0, A: 0, B: 0, C: 0, unranked: 0 };
-}
-
-function iwateAddRankCount(bucket, rank, count) {
-  if (IWATE_RANKS.indexOf(rank) !== -1) {
-    bucket[rank] += count;
-  } else {
-    bucket.unranked += count;
-  }
-}
-
-function iwateRankTotal(bucket) {
-  return iwateRankedTotal(bucket) + (bucket.unranked || 0);
-}
-
-function iwateRankedTotal(bucket) {
-  return IWATE_RANKS.reduce(function(total, rank) {
-    return total + (bucket[rank] || 0);
-  }, 0);
-}
-
-function iwateRankCountsText(bucket) {
-  var rankedTotal = iwateRankedTotal(bucket);
-  if (rankedTotal === 0) {
-    return 'ランク=－ / 見込み数合計=' + iwateRankTotal(bucket) + '件';
-  }
-
-  var parts = IWATE_RANKS.map(function(rank) {
-    return rank + '=' + (bucket[rank] || 0) + '件';
-  });
-  if (bucket.unranked > 0) {
-    parts.push('ランク－=' + bucket.unranked + '件');
-  }
-  parts.push('合計=' + iwateRankTotal(bucket) + '件');
-  return parts.join(' / ');
-}
-
-function iwateRankDeltaText(current, previous) {
-  var currentRankedTotal = iwateRankedTotal(current);
-  var previousRankedTotal = iwateRankedTotal(previous);
-  if (currentRankedTotal === 0 && previousRankedTotal === 0) {
-    return 'ランク=－ / 見込み数合計=' +
-      iwateSignedNumber(iwateRankTotal(current) - iwateRankTotal(previous)) + '件';
-  }
-
-  var parts = IWATE_RANKS.map(function(rank) {
-    return rank + '=' + iwateSignedNumber((current[rank] || 0) - (previous[rank] || 0)) + '件';
-  });
-  if (current.unranked > 0 || previous.unranked > 0) {
-    parts.push('ランク－=' + iwateSignedNumber(current.unranked - previous.unranked) + '件');
-  }
-  parts.push('合計=' + iwateSignedNumber(iwateRankTotal(current) - iwateRankTotal(previous)) + '件');
-  return parts.join(' / ');
-}
-
-function iwateWeeklyPerformanceText(current, previous) {
-  var currentRankedTotal = iwateRankedTotal(current);
-  var previousRankedTotal = iwateRankedTotal(previous);
-  if (currentRankedTotal === 0 && previousRankedTotal === 0) {
-    return 'ランク：－、見込み数合計：' + iwateRankTotal(current) +
-      '件（先週比' + iwateSignedJapaneseNumber(iwateRankTotal(current) - iwateRankTotal(previous)) + '件）';
-  }
-
-  var parts = IWATE_RANKS.map(function(rank) {
-    var fullWidthRank = String.fromCharCode(rank.charCodeAt(0) + 65248);
-    return fullWidthRank + 'ランク：' + (current[rank] || 0) + '件（先週比' +
-      iwateSignedJapaneseNumber((current[rank] || 0) - (previous[rank] || 0)) + '件）';
-  });
-  if (current.unranked > 0 || previous.unranked > 0) {
-    parts.push('ランク：－、見込み数合計：' + current.unranked + '件（先週比' +
-      iwateSignedNumber(current.unranked - previous.unranked) + '件）');
-  }
-  return parts.join('、');
-}
-
-function iwateMonthlyPerformanceText(bucket, hideRanks) {
-  var rankedTotal = iwateRankedTotal(bucket);
-  if (hideRanks || rankedTotal === 0) {
-    return '見込み数合計：' + iwateRankTotal(bucket) + '件';
-  }
-
-  var parts = IWATE_RANKS.map(function(rank) {
-    return String.fromCharCode(rank.charCodeAt(0) + 65248) + 'ランク：' + (bucket[rank] || 0) + '件';
-  });
-  if (bucket.unranked > 0) {
-    parts.push('ランク：－、見込み数合計：' + bucket.unranked + '件');
-  }
-  return parts.join('、');
-}
-
-function iwateSignedNumber(value) {
-  return value > 0 ? '+' + value : String(value);
-}
-
-function iwateSignedJapaneseNumber(value) {
-  if (value > 0) return '＋' + value;
-  if (value < 0) return '－' + Math.abs(value);
-  return '±0';
-}
-
-function iwateSafeNumber(value) {
-  var numberValue = Number(String(value === null || value === undefined ? '' : value).replace(/,/g, '').trim());
-  return isNaN(numberValue) ? 0 : numberValue;
-}
-
-function iwateDateYmd(date) {
-  return Utilities.formatDate(date, IWATE_WEEKLY_TIMEZONE, 'yyyy-MM-dd');
-}
-
-function iwateNormalizeSheetDate(value) {
-  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
-    return iwateDateYmd(value);
-  }
-
-  var text = String(value || '').trim();
-  var match = text.match(/(\d{4})[\/\-年](\d{1,2})[\/\-月](\d{1,2})/);
-  if (!match) return '';
-  return match[1] + '-' + ('0' + match[2]).slice(-2) + '-' + ('0' + match[3]).slice(-2);
-}
-
-function iwateWeekRange(deliveryYmd) {
-  var parts = deliveryYmd.split('-').map(Number);
-  var base = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 12));
-  var daysSinceMonday = (base.getUTCDay() + 6) % 7;
-  var currentStart = iwateAddDaysYmd(deliveryYmd, -daysSinceMonday);
-  return {
-    previousStart: iwateAddDaysYmd(currentStart, -7),
-    currentStart: currentStart,
-    currentEnd: iwateAddDaysYmd(currentStart, 7)
-  };
-}
-
-function iwateAddDaysYmd(ymd, days) {
-  var parts = ymd.split('-').map(Number);
-  var date = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + days, 12));
-  return Utilities.formatDate(date, 'UTC', 'yyyy-MM-dd');
-}
-
-function iwatePreviousMonthKeys(deliveryYmd, count) {
-  var parts = deliveryYmd.split('-').map(Number);
-  var keys = [];
-  for (var back = count; back >= 1; back--) {
-    var date = new Date(Date.UTC(parts[0], parts[1] - 1 - back, 1, 12));
-    keys.push(Utilities.formatDate(date, 'UTC', 'yyyy-MM'));
-  }
-  return keys;
-}
-
-function iwateDisplayYmd(ymd) {
-  return ymd.replace(/-/g, '/');
-}
-
-function iwateDisplayMonth(monthKey) {
-  var parts = monthKey.split('-');
-  return parts[0] + '年' + Number(parts[1]) + '月';
-}
-
-function iwateDisplayShortMonth(monthKey) {
-  var parts = monthKey.split('-');
-  return String(parts[0]).slice(-2) + '年' + Number(parts[1]) + '月';
-}
-
-// 内容だけを確認したい場合に手動実行します。メールは送信しません。
-function previewWeeklyProspectReport() {
-  var ss = SpreadsheetApp.openById(IWATE_SPREADSHEET_ID);
-  var report = buildWeeklyProspectReport(ss, new Date());
-  Logger.log(report.subject + '\n\n' + report.body);
-}
 
